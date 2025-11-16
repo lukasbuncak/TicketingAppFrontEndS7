@@ -1,6 +1,7 @@
+import { Navigate, Outlet } from "react-router-dom";
+
 // src/components/Admin/AdminGuard.jsx
 import { useAdminAuth } from "../../auth/useAdminAuth";
-import { Navigate, Outlet } from "react-router-dom";
 
 export default function AdminGuard({ children }) {
   const { isAdmin, checking } = useAdminAuth();

@@ -1,8 +1,9 @@
+import { jwtDecode } from "jwt-decode";
 // src/routers/AdminPage/AdminPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { msalInstance } from "../../auth/msalInstance";
-import { jwtDecode } from "jwt-decode";
 
 // ---- temporary mock API (your real adminAPI can be wired here) ----
 const StudentAPI = {
