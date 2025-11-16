@@ -1,6 +1,7 @@
 // src/App.jsx
 import { Navigate, Route, BrowserRouter as Router, Routes } from "react-router-dom";
 
+import AdminGuard from "./components/Student/AdminGuard";
 import AdminPage from "./routers/AdminPage/AdminPage";
 import { GuestOnly, RequireAuth } from "./routers/guards";
 import Login from "./routers/Login/Login";
@@ -18,14 +19,23 @@ export default function App() {
           <Route path="/login" element={<Login />} />
         </Route>
 
-        {/* Auth required */}
-        <Route element={<RequireAuth />}>
-          <Route path="/home" element={<TicketHomePage />} />
-          <Route path="/admin" element={<AdminPage />} /> {/* might need separate RequireAuth. Reason: Azure JWT which is seperate, therefore,
-                                                           I confirm and validate it directly with azure if possible */}
-        </Route>
 
-        {/* Default route: send to the right place */}
+<Route element={<RequireAuth />}>
+  <Route path="/home" element={<TicketHomePage />} />
+</Route>
+
+// App.jsx
+<Route
+  path="/admin"
+  element={
+    <AdminGuard>
+      <AdminPage />
+    </AdminGuard>
+  }
+/>
+
+
+        {/* Defaults */}
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>

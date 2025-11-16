@@ -1,5 +1,8 @@
+import urls from "./urls";
 import axios from "axios";
-import urls from "./urls"; // keep if you already have this file
+
+// keep if you already have this file
+import { ADMIN_STORAGE_KEY } from "../auth/useAdminAuth";
 
 const client = axios.create({
   baseURL: import.meta?.env?.VITE_API_URL ?? urls?.base_url ?? "/api",
@@ -9,7 +12,7 @@ const client = axios.create({
 
 // attach token automatically if present
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token") || localStorage.getItem("admin_jwt");
+  const token = localStorage.getItem(ADMIN_STORAGE_KEY) 
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -17,7 +20,16 @@ client.interceptors.request.use((config) => {
 // normalize errors
 client.interceptors.response.use(
   (res) => res,
-  (err) => Promise.reject(new Error(err.response?.data?.message || err.message))
+  (err) => {
+    const status = err.response?.status;
+    if (status === 401 || status === 403) {
+      // Token invalid/expired or no longer allowed
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+      // optional: force a reload or route change
+      // window.location.href = "/login?admin=1";
+    }
+    return Promise.reject(err);
+  }
 );
 
 export default client;
