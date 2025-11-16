@@ -20,20 +20,15 @@ export default function App() {
         </Route>
 
 
-<Route element={<RequireAuth />}>
-  <Route path="/home" element={<TicketHomePage />} />
-</Route>
+        <Route element={<RequireAuth />}>
+          <Route path="/home" element={<TicketHomePage />} />
+        </Route>
 
-// App.jsx
-<Route
-  path="/admin"
-  element={
-    <AdminGuard>
-      <AdminPage />
-    </AdminGuard>
-  }
-/>
 
+        {/* Admin area protected by Entra ID + ADMIN role */}
+        <Route element={<AdminGuard />}>
+          <Route path="/admin" element={<AdminPage />} />
+        </Route>
 
         {/* Defaults */}
         <Route path="/" element={<Navigate to="/home" replace />} />
