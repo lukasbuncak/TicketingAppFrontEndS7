@@ -1,36 +1,10 @@
-import { jwtDecode } from "jwt-decode";
 // src/routers/AdminPage/AdminPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { jwtDecode } from "jwt-decode";
 
 import { msalInstance } from "../../auth/msalInstance";
-
-// ---- temporary mock API (your real adminAPI can be wired here) ----
-const StudentAPI = {
-  createStudent: async (payload) => {
-    // return adminAPI.createStudent(payload)
-    await new Promise((r) => setTimeout(r, 400));
-    return { id: crypto.randomUUID(), status: "ACTIVE", ...payload };
-  },
-  getStudentById: async (id) => {
-    await new Promise((r) => setTimeout(r, 250));
-    return {
-      id,
-      firstName: "Ada",
-      lastName: "Lovelace",
-      schoolMail: "ada@school.edu",
-      status: "ACTIVE",
-    };
-  },
-  searchStudents: async (q) => {
-    await new Promise((r) => setTimeout(r, 200));
-    // mock results – replace with backend search
-    return [
-      { id: "S-1001", label: "Ada Lovelace — ada@school.edu" },
-      { id: "S-1002", label: "Alan Turing — alan@school.edu" },
-    ].filter((x) => x.label.toLowerCase().includes(q.toLowerCase()));
-  },
-};
+import adminAPI from "../../api/adminAPI";
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -40,7 +14,10 @@ export default function AdminPage() {
 
   useEffect(() => {
     const token = localStorage.getItem("admin_access_token");
-    if (!token) return;
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
 
     try {
       const payload = jwtDecode(token);
@@ -53,36 +30,34 @@ export default function AdminPage() {
       console.warn("Failed to decode admin token", e);
       setAdminInfo(null);
     }
-  }, []);
+  }, [navigate]);
 
   const handleLogout = async () => {
-    // 1) remove token from storage so guards stop letting you in
     localStorage.removeItem("admin_access_token");
     sessionStorage.removeItem("admin_access_token");
 
     try {
-      // 2) sign out from Entra ID for this app
       await msalInstance.logoutPopup({
         postLogoutRedirectUri: window.location.origin + "/login",
       });
     } catch (e) {
       console.warn("MSAL logout failed, falling back to navigation", e);
+    } finally {
       navigate("/login", { replace: true });
     }
   };
 
-  // ---- existing page state ----
-
+  // ---- page state ----
   const [mode, setMode] = useState("create"); // 'create' | 'view'
+
   const [search, setSearch] = useState("");
   const [options, setOptions] = useState([]);
 
-  // create form state
   const [form, setForm] = useState({
     personalMail: "",
     firstName: "",
     lastName: "",
-    personalId: "",
+    personalId: "", // purely UI for now
   });
 
   const canSubmit = useMemo(
@@ -94,65 +69,129 @@ export default function AdminPage() {
     [form]
   );
 
-  // selected student
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingCreate, setSavingCreate] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
   const [error, setError] = useState("");
 
-  // --- search handling ---
+  // ---- search (by numeric userId for now) ----
   useEffect(() => {
-    let on = true;
+    let cancelled = false;
+
     (async () => {
       if (!search.trim()) {
         setOptions([]);
         return;
       }
+
       try {
-        const found = await StudentAPI.searchStudents(search.trim());
-        if (on) setOptions(found);
+        const results = await adminAPI.searchStudents(search);
+        if (!cancelled) setOptions(results);
       } catch (e) {
-        if (on) setOptions([]);
+        if (!cancelled) setOptions([]);
       }
     })();
+
     return () => {
-      on = false;
+      cancelled = true;
     };
   }, [search]);
 
+  // ---- load one student by ID ----
   const loadStudent = async (id) => {
     setError("");
     setLoading(true);
     try {
-      const data = await StudentAPI.getStudentById(id);
-      setStudent(data);
+      const data = await adminAPI.getStudentById(id);
+      const displayName = data.displayName || "";
+      const [firstName, ...rest] = displayName.split(" ");
+      const lastName = rest.join(" ");
+
+      setStudent({
+        id, // path variable is the id
+        firstName: firstName || displayName,
+        lastName: lastName,
+        schoolMail: data.schoolEmail,
+        status: data.status,
+        personalId: data.personalEmail, // temp mapping from backend
+      });
       setMode("view");
     } catch (e) {
-      setError(e.message || "Failed to load student");
+      console.error(e);
+      setError(
+        e.response?.data?.message || e.message || "Failed to load student"
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // ---- create student ----
   const onCreateSubmit = async (e) => {
     e.preventDefault();
     if (!canSubmit) return;
-    setSaving(true);
+
+    setSavingCreate(true);
     setError("");
+
     try {
-      const created = await StudentAPI.createStudent(form);
+      const created = await adminAPI.createStudent(form);
+      const displayName = created.displayName || "";
+      const [firstName, ...rest] = displayName.split(" ");
+      const lastName = rest.join(" ");
+
+      // After creation we don't know DB id yet (it’s not in AdminUserResponse),
+      // so we just show the created user info without ID.
       setStudent({
-        id: created.id,
-        firstName: created.firstName,
-        lastName: created.lastName,
-        schoolMail: created.personalMail, // map as needed
-        status: "ACTIVE",
+        id: "(not returned)",
+        firstName: firstName || displayName,
+        lastName: lastName,
+        schoolMail: created.schoolEmail,
+        status: created.status,
+        personalId: form.personalId,
+        tempPassword: created.tempPassword,
       });
       setMode("view");
     } catch (e) {
-      setError(e.message || "Failed to create student");
+      console.error(e);
+      setError(
+        e.response?.data?.message || e.message || "Failed to create student"
+      );
     } finally {
-      setSaving(false);
+      setSavingCreate(false);
+    }
+  };
+
+  // ---- save status change ----
+  const saveStatus = async () => {
+    if (!student || student.id === "(not returned)") {
+      setError("Cannot update status: user id is unknown.");
+      return;
+    }
+    setSavingStatus(true);
+    setError("");
+
+    try {
+      const updated = await adminAPI.updateStudentStatus(
+        student.id,
+        student.status
+      );
+      setStudent((s) =>
+        s
+          ? {
+              ...s,
+              status: updated.status,
+            }
+          : s
+      );
+    } catch (e) {
+      console.error(e);
+      setError(
+        e.response?.data?.message || e.message || "Failed to update status"
+      );
+    } finally {
+      setSavingStatus(false);
     }
   };
 
@@ -200,13 +239,12 @@ export default function AdminPage() {
             <div className="card">
               <div className="card-body">
                 <label className="form-label fw-semibold">
-                  Search a student (school mail or id)
+                  Search a student (ID for now)
                 </label>
 
-                {/* simple search + results dropdown */}
                 <input
                   className="form-control"
-                  placeholder="Type name, mail, or id…"
+                  placeholder="Type user id…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -290,9 +328,9 @@ export default function AdminPage() {
                       <button
                         className="btn btn-primary"
                         type="submit"
-                        disabled={!canSubmit || saving}
+                        disabled={!canSubmit || savingCreate}
                       >
-                        {saving ? "Creating…" : "Create"}
+                        {savingCreate ? "Creating…" : "Create"}
                       </button>
                       <button
                         type="button"
@@ -305,7 +343,7 @@ export default function AdminPage() {
                             personalId: "",
                           })
                         }
-                        disabled={saving}
+                        disabled={savingCreate}
                       >
                         Reset
                       </button>
@@ -348,15 +386,15 @@ export default function AdminPage() {
                             disabled
                           />
                         </div>
-                        <div className="col-md-6">
-                          <label className="form-label">School ID</label>
+                        <div className="col-md-4">
+                          <label className="form-label">User ID</label>
                           <input
                             className="form-control"
                             value={student.id}
                             disabled
                           />
                         </div>
-                        <div className="col-md-6">
+                        <div className="col-md-4">
                           <label className="form-label">Status</label>
                           <select
                             className="form-select"
@@ -372,11 +410,23 @@ export default function AdminPage() {
                             <option value="DISABLED">Disabled</option>
                           </select>
                         </div>
+                        <div className="col-md-4">
+                          <label className="form-label">Personal Id</label>
+                          <input
+                            className="form-control"
+                            value={student.personalId || ""}
+                            disabled
+                          />
+                        </div>
                       </div>
 
-                      <div>
-                        <button className="btn btn-primary">
-                          Save changes
+                      <div className="mt-3">
+                        <button
+                          className="btn btn-primary"
+                          onClick={saveStatus}
+                          disabled={savingStatus}
+                        >
+                          {savingStatus ? "Saving…" : "Save changes"}
                         </button>
                       </div>
                     </div>

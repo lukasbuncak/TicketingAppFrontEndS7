@@ -1,7 +1,9 @@
 // src/routers/Student/TicketHomePage.jsx
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+
 import TicketAPI from "../../api/TicketAPI";
+import MfaSetupModal from "../../components/Student/MfaSetupModal";
 import TicketEditor from "../../components/Student/TicketEditor.jsx";
 import TicketSidebar from "../../components/Student/TicketSideBar.jsx";
 
@@ -10,14 +12,14 @@ const emptyDraft = { id: null, title: "", description: "", status: "DRAFT", atta
 export default function StudentHomePage() {
   const [tickets, setTickets] = useState([]);
   const [selected, setSelected] = useState(null);
-  const [mode, setMode] = useState("view"); // "view" | "create"
+  const [mode, setMode] = useState("view");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [showMfa, setShowMfa] = useState(false);
 
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Load my tickets (backend already returns newest first)
   useEffect(() => {
     (async () => {
       try {
@@ -26,7 +28,6 @@ export default function StudentHomePage() {
         const items = page?.content ?? [];
         setTickets(items);
 
-        // If not instructed to open a new draft, preselect newest ticket if any.
         if (!location.state?.openNew && items.length) {
           setSelected(items[0]);
           setMode("view");
@@ -43,17 +44,14 @@ export default function StudentHomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Create new draft helper
   const openCreate = useCallback(() => {
     setSelected({ ...emptyDraft });
     setMode("create");
   }, []);
 
-  // If we arrived from Login with state.openNew -> open a fresh draft once
   useEffect(() => {
     if (location.state?.openNew) {
       openCreate();
-      // clear state so F5/back/forward doesn’t re-trigger
       navigate(location.pathname, { replace: true });
     }
   }, [location.state, location.pathname, navigate, openCreate]);
@@ -80,7 +78,6 @@ export default function StudentHomePage() {
         description: (draft.description || "").trim(),
       });
 
-      // Prepend the newly created ticket (backend order is newest-first)
       setTickets((prev) => [created, ...prev]);
       setSelected(created);
       setMode("view");
@@ -114,9 +111,22 @@ export default function StudentHomePage() {
             />
           </aside>
 
-          <main className="col-12 col-md-8 col-lg-9">
-            <div className="d-flex justify-content-end mb-3">
-              <button className="btn btn-outline-dark btn-sm" onClick={signOut}>Sign out</button>
+          <main className="col-12 col-md-8 col-lg-9 position-relative">
+            <div className="d-flex justify-content-end mb-3 gap-2">
+              <button
+                className="btn btn-outline-secondary btn-sm"
+                type="button"
+                onClick={() => setShowMfa(true)}
+                disabled={loading}
+              >
+                Set up MFA
+              </button>
+              <button
+                className="btn btn-outline-dark btn-sm"
+                onClick={signOut}
+              >
+                Sign out
+              </button>
             </div>
 
             {err && <div className="alert alert-danger">{err}</div>}
@@ -128,6 +138,8 @@ export default function StudentHomePage() {
               onSubmit={onSubmitCreate}
               busy={loading}
             />
+
+            <MfaSetupModal open={showMfa} onClose={() => setShowMfa(false)} />
           </main>
         </div>
       </div>

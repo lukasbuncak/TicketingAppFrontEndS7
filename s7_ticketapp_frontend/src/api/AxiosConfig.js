@@ -3,7 +3,6 @@ import axios from "axios";
 import { signOutAndRedirect } from "../helpers/auth"
 import { isTokenExpired } from "../helpers/jwt"
 
-// Vite env: put VITE_API_URL in your .env (e.g. http://localhost:8081)
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
   withCredentials: false,   // JWT in header, not cookies
@@ -32,8 +31,16 @@ client.interceptors.response.use(
       err.response?.data?.error ||
       err.message ||
       "Request failed";
+
+    if (err && typeof err === "object") {
+      // keep status, data, etc – just override message
+      err.message = msg;
+      return Promise.reject(err);
+    }
+
     return Promise.reject(new Error(msg));
   }
 );
+
 
 export default client;
